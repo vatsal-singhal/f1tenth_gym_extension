@@ -483,7 +483,7 @@ def _float32_tree(tree: Any):
 
 
 def _active_vehicle_params(params: VehicleParameters) -> ActiveVehicleParams:
-    """Copy the supported host ABI prefix into finite float32 leaves."""
+    """Copy the supported host vehicle fields into finite float32 leaves."""
     return ActiveVehicleParams(
         **{
             name: np.float32(getattr(params, name))
@@ -507,7 +507,7 @@ def _validate_active_values(
         value = getattr(params, name)
         if value <= 0.0:
             raise ValueError(f"{prefix}.{name} must be > 0, got {value!r}")
-    for name in ("mu", "C_Sf", "C_Sr", "h", "a_max"):
+    for name in ("mu", "C_Sf", "C_Sr", "h", "a_max", "mu_y_peak"):
         value = getattr(params, name)
         if value < 0.0:
             raise ValueError(f"{prefix}.{name} must be >= 0, got {value!r}")
@@ -568,13 +568,13 @@ def _make_randomization(
 
     Disabled randomization and enabled-but-constant bounds collapse to one
     nominal vehicle with a false enable flag. A varying configuration keeps
-    all twenty active bounds so dynamics and collision geometry are sampled
+    all active bounds so dynamics and collision geometry are sampled
     from one correlated vehicle draw on device.
     """
-    if tuple(PARAMETER_ORDER[:20]) != ACTIVE_VEHICLE_FIELDS:
+    if tuple(PARAMETER_ORDER[:20]) + (PARAMETER_ORDER[88],) != ACTIVE_VEHICLE_FIELDS:
         raise RuntimeError(
             "the functional active-vehicle fields no longer match the first "
-            "20 entries of the VehicleParameters ABI"
+            "20 entries and slot 88 of the VehicleParameters ABI"
         )
 
     nominal_host = effective_vehicle

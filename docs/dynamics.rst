@@ -8,7 +8,7 @@ Choosing a dynamics model
    :class:`~f1tenth_gym.envs.integrators.IntegratorType`.
 
 Two vehicles are supported. ``KS`` has no tyre slip — steering geometry alone
-sets the heading. ``ST`` adds linear cornering stiffness, a yaw-rate state and
+sets the heading. ``ST`` adds saturated linear cornering stiffness, a yaw-rate state and
 a body slip angle. Units throughout are SI: metres, radians, m/s, m/s², and
 rad/m for curvature.
 
@@ -153,6 +153,24 @@ lateral tyre forces from ``C_Sf``/``C_Sr`` above 0.5 m/s and falls back to the
 kinematic expressions below it, so the two agree while parking and separate as
 soon as there is cornering load.
 
+The dynamic branch uses a linear saturation tire model. For each axle,
+``F_y = clip(mu * C_S * F_z * alpha, -mu_y_peak * F_z, mu_y_peak * F_z)``.
+The small-angle slips are ``alpha_f = delta - beta - lf * yaw_rate / v`` and
+``alpha_r = -beta + lr * yaw_rate / v``. Normal loads include longitudinal
+load transfer and are clamped to zero for unloaded axles. ``C_Sf`` and ``C_Sr``
+are normalized cornering stiffnesses in inverse radians; ``mu`` controls the
+linear response, while the dimensionless ``mu_y_peak`` independently controls
+the force cap. It must be finite and nonnegative. Each vehicle preset sets
+``mu_y_peak`` to its nominal ``mu``; a bare ``VehicleParameters`` defaults it
+to 1.0. Changing ``mu`` alone does not change this cap.
+
+For example, pass ``params=F1TENTH_VEHICLE_PARAMETERS.with_updates(mu_y_peak=0.8)``
+to ``EnvConfig`` to reduce peak lateral grip. The parameter also supports
+per-episode domain randomization in both mutable and JAX simulators. The
+low-speed kinematic branch remains unchanged. This simplified model retains
+small-angle dynamics and does not include combined-slip grip reduction or
+wheel-spin dynamics.
+
 Three seconds of one held command on a 30 m circle is enough to see it — a
 synthetic reference line keeps the run clear of any wall:
 
@@ -190,10 +208,10 @@ synthetic reference line keeps the run clear of any wall:
 ...           f"  beta={float(a['beta']):7.4f}"
 ...           f"  yaw_rate={float(a['ang_vel_z']):6.3f}")
 KS  x= 28.738  y= -1.773  beta= 0.0000  yaw_rate= 0.000
-ST  x= 28.110  y=  2.527  beta=-0.3005  yaw_rate= 2.999
+ST  x= 22.466  y= -4.683  beta=-0.1473  yaw_rate= 1.470
 
-Same seed, same spawn, same 300 actions: the two cars finish **4.35 m** apart,
-and ``ST`` is carrying 0.30 rad of slip that ``KS`` reports as an exact zero.
+Same seed, same spawn, same 300 actions: the two cars finish **6.91 m** apart,
+and ``ST`` is carrying 0.15 rad of slip that ``KS`` reports as an exact zero.
 Pick ``KS`` when the controller under test only needs a plausible kinematically
 feasible path, and ``ST`` whenever grip is part of the problem.
 
@@ -258,7 +276,7 @@ A car is one frozen
 ``EnvConfig.params``. Three presets ship — ``F1TENTH_VEHICLE_PARAMETERS`` (the
 default), ``F1FIFTH_VEHICLE_PARAMETERS`` for a 1/5-scale car, and
 ``FULLSCALE_VEHICLE_PARAMETERS``, the only one that fills the multi-body block.
-The 18 fields ``KS`` and ``ST`` actually read, grouped by what they change:
+The shared ``KS``/``ST`` parameters and the ST force cap, grouped by purpose:
 
 .. list-table::
    :header-rows: 1
@@ -273,8 +291,9 @@ The 18 fields ``KS`` and ``ST`` actually read, grouped by what they change:
        0.074 m (CoG height), ``width`` 0.31 m and ``length`` 0.58 m (the
        collision body)
    * - Tyres
-     - ``mu`` 1.0489 (friction coefficient), ``C_Sf`` 4.718 and ``C_Sr``
-       5.4562 (cornering stiffness, read by ``ST`` only)
+     - ``mu`` 1.0489 (linear-response coefficient), ``C_Sf`` 4.718 and
+       ``C_Sr`` 5.4562 (normalized cornering stiffness), ``mu_y_peak`` 1.0489
+       (peak lateral coefficient); these tyre parameters are read by ``ST`` only
    * - Steering limits
      - ``s_min``/``s_max`` ∓0.4189 rad, ``sv_min``/``sv_max`` ∓3.2 rad/s
    * - Longitudinal limits
@@ -295,10 +314,11 @@ the same corner as before:
 >>> a = drive(DynamicModel.ST, heavy)
 >>> print(f"x={float(a['pose_x']):.3f}  y={float(a['pose_y']):.3f}"
 ...       f"  beta={float(a['beta']):.4f}")
-x=28.508  y=1.960  beta=-0.3456
+x=22.205  y=-4.339  beta=-0.1776
 
-That is 0.693 m from the nominal ``ST`` run and 0.045 rad more slip — 7% more
-mass and 14% less grip, worth more than a car length in three seconds.
+That is 0.432 m from the nominal ``ST`` run and 0.030 rad more slip with
+7% more mass and a 14% smaller linear-response coefficient. The peak lateral
+coefficient remains at its preset value because ``mu_y_peak`` is independent.
 Swapping parameters on a live environment goes through
 ``env.unwrapped.configure(new_cfg)`` (:doc:`configuration`); redrawing them
 once per episode goes through ``DomainRandomizationConfig`` (:doc:`sim2real`).
@@ -311,9 +331,9 @@ Parameters reach the numba kernels as a flat ``float32`` array that is indexed
 ``VehicleParameters`` declaration order, exported as
 ``f1tenth_gym.envs.dynamic_models.PARAMETER_ORDER``. There is one array for
 every model, because the parameters describe the *vehicle*, not the model
-chosen to simulate it: ``to_array()`` emits all 88 fields and each model reads
-the slots it needs. ``KS`` and ``ST`` read indices 0-17 and ignore the rest;
-``MB`` additionally reads 20-87.
+chosen to simulate it: ``to_array()`` emits all 89 fields and each model reads
+the slots it needs. ``KS`` reads indices 0-17; ``ST`` also reads
+``mu_y_peak`` at index 88; ``MB`` additionally reads 20-87.
 
 **Appending a field is safe. Inserting or reordering one is not** — it shifts
 every slot after it and silently rewires each kernel, which is exactly how the
@@ -343,14 +363,11 @@ times per substep, ``IntegratorType.EULER`` (= 1) once.
 
 >>> a = drive(DynamicModel.ST, integrator=IntegratorType.EULER)
 >>> print(f"x={float(a['pose_x']):.3f}  y={float(a['pose_y']):.3f}")
-x=28.149  y=2.517
+x=22.416  y=-4.619
 
-Euler lands 0.040 m from the RK4 run after three seconds of hard cornering —
-about a hundredth of the gap between ``KS`` and ``ST``, which is the useful
-scale for the comparison. It is cheap: measured single-agent with the LiDAR
-disabled, a step costs 0.049 ms under Euler against 0.060 ms under RK4, and at
-the default 1080-beam LiDAR the whole step is ~0.22 ms and the difference is
-inside run-to-run noise. Order is rarely the bottleneck here; beams are.
+Euler lands 0.081 m from the RK4 run after three seconds of hard cornering,
+compared with the 6.91 m gap between ``KS`` and ``ST``. The integrator choice
+changes the numerical trajectory; the tire model changes the available grip.
 
 Two details blunt what RK4 earns. The actuator constraints
 (``steering_constraint``, ``accl_constraints``) are applied *inside* the

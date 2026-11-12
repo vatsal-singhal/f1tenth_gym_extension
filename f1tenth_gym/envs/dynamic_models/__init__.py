@@ -129,6 +129,14 @@ class VehicleParameters:
     tire_r_vy5: float = math.nan
     tire_r_vy6: float = math.nan
 
+    # Appended after the legacy MB block to preserve every existing ABI slot.
+    # Peak lateral force / normal load, independent of linear-response mu.
+    mu_y_peak: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.mu_y_peak) or self.mu_y_peak < 0.0:
+            raise ValueError("mu_y_peak must be finite and >= 0")
+
     def with_updates(self, **updates: float) -> "VehicleParameters":
         return replace(self, **updates)
 
@@ -151,7 +159,7 @@ class VehicleParameters:
 
         One array for every model: the parameters describe the vehicle, not the
         model simulating it, so there is no per-model slicing. ``KS``/``ST`` read
-        indices 0-17 and ignore the rest.
+        indices 0-17; ST also reads mu_y_peak at index 88.
 
         Returns:
             A contiguous ``float32`` array of ``len(PARAMETER_ORDER)`` values, in
@@ -168,6 +176,7 @@ PARAMETER_ORDER: tuple[str, ...] = tuple(f.name for f in fields(VehicleParameter
 
 F1TENTH_VEHICLE_PARAMETERS = VehicleParameters(
     mu=1.0489,
+    mu_y_peak=1.0489,
     C_Sf=4.718,
     C_Sr=5.4562,
     lf=0.15875,
@@ -190,6 +199,7 @@ F1TENTH_VEHICLE_PARAMETERS = VehicleParameters(
 
 F1FIFTH_VEHICLE_PARAMETERS = VehicleParameters(
     mu=1.1,
+    mu_y_peak=1.1,
     C_Sf=5.3507,
     C_Sr=5.3507,
     lf=0.2725,
@@ -212,6 +222,7 @@ F1FIFTH_VEHICLE_PARAMETERS = VehicleParameters(
 
 FULLSCALE_VEHICLE_PARAMETERS = VehicleParameters(
     mu=1.0489,
+    mu_y_peak=1.0489,
     C_Sf=20.89,
     C_Sr=20.89,
     lf=0.88392,

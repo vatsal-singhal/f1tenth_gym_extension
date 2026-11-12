@@ -13,7 +13,7 @@ from ..jax_core import CoreParams
 from ..contact.geometry import BodyParams
 
 
-# This literal mirrors the active prefix of the host VehicleParameters wire ABI.
+# This literal mirrors the active fields of the host VehicleParameters wire ABI.
 # Keeping the tuple local lets this module remain independent of NumPy and the
 # mutable environment package while still giving field-key derivation a stable
 # positional contract.
@@ -38,6 +38,7 @@ ACTIVE_VEHICLE_FIELDS = (
     "length",
     "collision_body_center_x",
     "collision_body_center_y",
+    "mu_y_peak",
 )
 
 # ASCII ``F1DR`` interpreted as one unsigned 32-bit fold-in tag. This is an RNG
@@ -48,7 +49,7 @@ _DOMAIN_RANDOMIZATION_TAG = 0x46314452
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class ActiveVehicleParams:
-    """The twenty finite vehicle leaves consumed by supported JAX features."""
+    """The finite vehicle leaves consumed by supported JAX features."""
 
     mu: Any
     C_Sf: Any
@@ -70,6 +71,7 @@ class ActiveVehicleParams:
     length: Any
     collision_body_center_x: Any
     collision_body_center_y: Any
+    mu_y_peak: Any
 
     def as_array(self) -> jax.Array:
         """Stack the ABI-ordered leaves along a final field axis."""
@@ -80,7 +82,7 @@ class ActiveVehicleParams:
 
     @classmethod
     def from_array(cls, values: jax.Array) -> "ActiveVehicleParams":
-        """Build active parameters from an array with a 20-value final axis."""
+        """Build active parameters with one final axis of active fields."""
         values = jnp.asarray(values)
         if values.ndim < 1 or values.shape[-1] != len(ACTIVE_VEHICLE_FIELDS):
             raise ValueError(
@@ -108,6 +110,7 @@ class ActiveVehicleParams:
             a_max=self.a_max,
             v_min=self.v_min,
             v_max=self.v_max,
+            mu_y_peak=self.mu_y_peak,
         )
 
     def to_body(self) -> BodyParams:

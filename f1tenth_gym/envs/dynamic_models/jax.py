@@ -34,6 +34,7 @@ class DynamicsParams:
     a_max: Any
     v_min: Any
     v_max: Any
+    mu_y_peak: Any
 
     @classmethod
     def from_vehicle_parameters(cls, params: Any) -> "DynamicsParams":
@@ -177,38 +178,27 @@ def _single_track_dynamic_branch(
     yaw_rate = state[5]
     beta = state[6]
     gravity = jnp.asarray(9.81, dtype=state.dtype)
-    rear_load_term = gravity * params.lr - acceleration * params.h
-    front_load_term = gravity * params.lf + acceleration * params.h
     wheelbase = params.lf + params.lr
-
-    yaw_acceleration = (params.mu * params.m / (params.I * wheelbase)) * (
-        params.lf * params.C_Sf * rear_load_term * steering
-        + (
-            params.lr * params.C_Sr * front_load_term
-            - params.lf * params.C_Sf * rear_load_term
-        )
-        * beta
-        - (
-            params.lf**2 * params.C_Sf * rear_load_term
-            + params.lr**2 * params.C_Sr * front_load_term
-        )
-        * yaw_rate
-        / speed
+    front_load = jnp.maximum(
+        0.0, params.m * (gravity * params.lr - acceleration * params.h) / wheelbase
     )
-    beta_rate = (params.mu / (speed * wheelbase)) * (
-        params.C_Sf * rear_load_term * steering
-        - (
-            params.C_Sr * front_load_term
-            + params.C_Sf * rear_load_term
-        )
-        * beta
-        + (
-            params.C_Sr * front_load_term * params.lr
-            - params.C_Sf * rear_load_term * params.lf
-        )
-        * yaw_rate
-        / speed
-    ) - yaw_rate
+    rear_load = jnp.maximum(
+        0.0, params.m * (gravity * params.lf + acceleration * params.h) / wheelbase
+    )
+    alpha_f = steering - beta - params.lf * yaw_rate / speed
+    alpha_r = -beta + params.lr * yaw_rate / speed
+    front_force = jnp.clip(
+        params.mu * params.C_Sf * front_load * alpha_f,
+        -params.mu_y_peak * front_load,
+        params.mu_y_peak * front_load,
+    )
+    rear_force = jnp.clip(
+        params.mu * params.C_Sr * rear_load * alpha_r,
+        -params.mu_y_peak * rear_load,
+        params.mu_y_peak * rear_load,
+    )
+    yaw_acceleration = (params.lf * front_force - params.lr * rear_force) / params.I
+    beta_rate = (front_force + rear_force) / (params.m * speed) - yaw_rate
     return jnp.stack(
         (
             speed * jnp.cos(yaw + beta),

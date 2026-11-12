@@ -627,7 +627,7 @@ class EnvConfig:
         if not isinstance(dr_cfg, DomainRandomizationConfig):
             raise TypeError("domain_randomization must be a DomainRandomizationConfig instance")
         inactive_dr_fields = set(dr_cfg.randomized_fields()).intersection(
-            PARAMETER_ORDER[20:]
+            PARAMETER_ORDER[20:88]
         )
         if inactive_dr_fields:
             names = ", ".join(sorted(inactive_dr_fields))

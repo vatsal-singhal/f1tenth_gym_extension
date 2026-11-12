@@ -25,6 +25,7 @@ import unittest
 import numpy as np
 from f1tenth_gym.envs.dynamic_models import (
     vehicle_dynamics_st,
+    VehicleParameters,
 )
 from f1tenth_gym.envs.dynamic_models.kinematic import (
     vehicle_dynamics_ks,
@@ -118,10 +119,13 @@ def func_ST(
             v_min,
             v_max,
     ])
+    # High cap deliberately retains the historical linear-model oracle.
+    full_params = VehicleParameters(mu_y_peak=1e6).to_array().astype(np.float64)
+    full_params[:16] = params
     f = vehicle_dynamics_st(
         x,
         u,
-        params=params,
+        params=full_params,
     )
     return f
 
@@ -151,7 +155,7 @@ class DynamicsTest(unittest.TestCase):
         self.a_max = 11.5  # maximum absolute acceleration [m/s^2]
 
     def _params(self):
-        return np.array(
+        prefix = np.array(
             [
                 self.mu,
                 self.C_Sf,
@@ -171,6 +175,10 @@ class DynamicsTest(unittest.TestCase):
                 self.v_max,
             ]
         )
+
+        params = VehicleParameters(mu_y_peak=1e6).to_array().astype(np.float64)
+        params[:16] = prefix
+        return params
 
     def test_ks_rear_axle_and_cog_free_flight_are_equivalent(self):
         """Pin the frame transform before KS moves to a CoG-native state."""

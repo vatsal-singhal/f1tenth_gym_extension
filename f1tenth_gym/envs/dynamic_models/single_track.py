@@ -6,7 +6,7 @@ from .utils import steering_constraint, accl_constraints
 @njit(cache=True)
 def vehicle_dynamics_st(x: np.ndarray, u_init: np.ndarray, params: np.ndarray) -> np.ndarray:
     """
-    Single Track Vehicle Dynamics.
+    Single Track Vehicle Dynamics with linearly saturated lateral tire forces.
     From https://gitlab.lrz.de/tum-cps/commonroad-vehicle-models/-/blob/master/vehicleModels_commonRoad.pdf, section 7
 
         Args:
@@ -21,8 +21,9 @@ def vehicle_dynamics_st(x: np.ndarray, u_init: np.ndarray, params: np.ndarray) -
             u (numpy.ndarray (2, )): control input vector (u1, u2)
                 u1: steering angle velocity of front wheels
                 u2: longitudinal acceleration
-            params (np.ndarray (88, )): flat float32 parameter array in VehicleParameters declaration order; this model reads indices 0-17 (a dict raises a numba typing error):
-                mu (float): friction coefficient
+            params (np.ndarray (89, )): flat float32 parameter array in VehicleParameters declaration order; this model reads indices 0-17 and 88 (a dict raises a numba typing error):
+                mu_y_peak (float): peak lateral force / normal load (index 88)
+                mu (float): linear-response friction coefficient
                 C_Sf (float): cornering stiffness of front wheels
                 C_Sr (float): cornering stiffness of rear wheels
                 lf (float): distance from center of gravity to front axle
@@ -56,8 +57,8 @@ def vehicle_dynamics_st(x: np.ndarray, u_init: np.ndarray, params: np.ndarray) -
     # gravity constant m/s^2
     g = 9.81
     mu = params[0]
-    C_Sf = params[1]  # front tire cornering stiffness [N/rad]  CF
-    C_Sr = params[2]  # rear tire cornering stiffness [N/rad]  CR
+    C_Sf = params[1]  # normalized front cornering stiffness [1/rad]
+    C_Sr = params[2]  # normalized rear cornering stiffness [1/rad]
     lf = params[3]  # distance from spring mass center of gravity to front axle [m]  LENA
     lr = params[4]  # distance from spring mass center of gravity to rear axle [m]  LENB
     h = params[5]  # M_s center of gravity above ground [m]  HS
@@ -126,9 +127,23 @@ def vehicle_dynamics_st(x: np.ndarray, u_init: np.ndarray, params: np.ndarray) -
             ]
         )
     else:
-        # system dynamics
-        glr = g * lr - ACCL * h
-        glf = g * lf + ACCL * h
+        # Positive axle slip produces a positive lateral force. Keep the
+        # existing small-angle slips and longitudinal load transfer; an
+        # unloaded axle cannot generate tire force.
+        wheelbase = lf + lr
+        F_zf = max(0.0, m * (g * lr - ACCL * h) / wheelbase)
+        F_zr = max(0.0, m * (g * lf + ACCL * h) / wheelbase)
+        alpha_f = DELTA - BETA - lf * PSI_DOT / V
+        alpha_r = -BETA + lr * PSI_DOT / V
+        mu_y_peak = params[88]
+        F_yf = min(
+            max(mu * C_Sf * F_zf * alpha_f, -mu_y_peak * F_zf),
+            mu_y_peak * F_zf,
+        )
+        F_yr = min(
+            max(mu * C_Sr * F_zr * alpha_r, -mu_y_peak * F_zr),
+            mu_y_peak * F_zr,
+        )
         f = np.array(
             [
                 V * np.cos(PSI + BETA),  # X_DOT
@@ -136,34 +151,8 @@ def vehicle_dynamics_st(x: np.ndarray, u_init: np.ndarray, params: np.ndarray) -
                 STEER_VEL,  # DELTA_DOT
                 ACCL,  # V_DOT
                 PSI_DOT,  # PSI_DOT
-                (
-                    (mu * m)
-                    / (I * (lf + lr))
-                )
-                * (
-                    lf * C_Sf * (glr) * DELTA
-                    + (
-                        lr * C_Sr * (glf)
-                        - lf * C_Sf * (glr)
-                    )
-                    * BETA
-                    - (
-                        lf * lf * C_Sf * (glr)
-                        + lr * lr * C_Sr * (glf)
-                    )
-                    * (PSI_DOT / V)
-                ),  # PSI_DOT_DOT
-                (mu / (V * (lr + lf)))
-                * (
-                    C_Sf * (glr) * DELTA
-                    - (C_Sr * (glf) + C_Sf * (glr)) * BETA
-                    + (
-                        C_Sr * (glf) * lr
-                        - C_Sf * (glr) * lf
-                    )
-                    * (PSI_DOT / V)
-                )
-                - PSI_DOT,  # BETA_DOT
+                (lf * F_yf - lr * F_yr) / I,  # PSI_DOT_DOT
+                (F_yf + F_yr) / (m * V) - PSI_DOT,  # BETA_DOT
             ]
         )
 

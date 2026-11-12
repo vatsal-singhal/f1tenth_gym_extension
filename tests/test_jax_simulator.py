@@ -365,20 +365,20 @@ class TestDomainRandomizationMapping(unittest.TestCase):
         low = np.asarray(simulator.randomization.low.as_array())
         high = np.asarray(simulator.randomization.high.as_array())
         expected_nominal = np.asarray(
-            [getattr(VEHICLE, name) for name in PARAMETER_ORDER[:20]],
+            [getattr(VEHICLE, name) for name in PARAMETER_ORDER[:20] + ("mu_y_peak",)],
             dtype=np.float32,
         )
         expected_low = np.asarray(
             [
                 getattr(self.host.domain_randomization_config.low, name)
-                for name in PARAMETER_ORDER[:20]
+                for name in PARAMETER_ORDER[:20] + ("mu_y_peak",)
             ],
             dtype=np.float32,
         )
         expected_high = np.asarray(
             [
                 getattr(self.host.domain_randomization_config.high, name)
-                for name in PARAMETER_ORDER[:20]
+                for name in PARAMETER_ORDER[:20] + ("mu_y_peak",)
             ],
             dtype=np.float32,
         )

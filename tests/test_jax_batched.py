@@ -138,6 +138,7 @@ def _active_vehicle(params):
     body = params.body
     return ActiveVehicleParams(
         mu=dynamics.mu,
+        mu_y_peak=dynamics.mu_y_peak,
         C_Sf=dynamics.C_Sf,
         C_Sr=dynamics.C_Sr,
         lf=dynamics.lf,

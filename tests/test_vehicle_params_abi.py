@@ -21,6 +21,7 @@ from f1tenth_gym.envs.dynamic_models import (
 
 # THE WIRE FORMAT. Slots 0-17 are read by KS/ST/MB, 18-19 are Python-side collision
 # geometry no kernel reads, 20-87 are the multi-body block (which shares `h` at 5).
+# Slot 88 is the ST peak lateral coefficient.
 EXPECTED_PARAMETER_ORDER = (
     "mu", "C_Sf", "C_Sr", "lf", "lr", "h", "m", "I",
     "s_min", "s_max", "sv_min", "sv_max",
@@ -45,7 +46,7 @@ EXPECTED_PARAMETER_ORDER = (
     "tire_p_hy1", "tire_p_hy3", "tire_p_vy1", "tire_p_vy3",
     "tire_r_by1", "tire_r_by2", "tire_r_by3", "tire_r_cy1", "tire_r_ey1",
     "tire_r_hy1", "tire_r_vy1", "tire_r_vy3", "tire_r_vy4", "tire_r_vy5",
-    "tire_r_vy6",
+    "tire_r_vy6", "mu_y_peak",
 )
 
 # Slots the kernels hardcode, checked by name so a shift is caught at the exact
@@ -55,7 +56,7 @@ KERNEL_SLOTS = {
     8: "s_min", 9: "s_max", 10: "sv_min", 11: "sv_max",
     12: "v_switch", 13: "a_max", 14: "v_min", 15: "v_max",
     16: "width", 17: "length",
-    20: "kappa_dot_max", 41: "K_zt", 49: "R_w", 87: "tire_r_vy6",
+    20: "kappa_dot_max", 41: "K_zt", 49: "R_w", 87: "tire_r_vy6", 88: "mu_y_peak",
 }
 
 ALL_PRESETS = (
@@ -70,9 +71,9 @@ class TestParameterOrder(unittest.TestCase):
         # Compared as lists so a mismatch names the field that moved.
         self.assertEqual(list(PARAMETER_ORDER), list(EXPECTED_PARAMETER_ORDER))
 
-    def test_order_has_88_entries(self):
-        self.assertEqual(len(PARAMETER_ORDER), 88)
-        self.assertEqual(len(EXPECTED_PARAMETER_ORDER), 88)
+    def test_order_has_89_entries(self):
+        self.assertEqual(len(PARAMETER_ORDER), 89)
+        self.assertEqual(len(EXPECTED_PARAMETER_ORDER), 89)
 
     def test_order_is_the_dataclass_declaration_order(self):
         self.assertEqual(
@@ -99,7 +100,7 @@ class TestToArray(unittest.TestCase):
         # per-model length any more.
         for params in ALL_PRESETS:
             arr = params.to_array()
-            self.assertEqual(arr.shape, (88,))
+            self.assertEqual(arr.shape, (89,))
             self.assertEqual(arr.dtype, np.float32)
 
     def test_marshals_by_name_in_order(self):

@@ -82,8 +82,8 @@ def core_params():
 
 
 class TestActiveVehicleABI(unittest.TestCase):
-    def test_active_fields_are_the_exact_supported_host_prefix(self):
-        self.assertEqual(ACTIVE_VEHICLE_FIELDS, PARAMETER_ORDER[:20])
+    def test_active_fields_are_the_exact_supported_host_slots(self):
+        self.assertEqual(ACTIVE_VEHICLE_FIELDS, PARAMETER_ORDER[:20] + ("mu_y_peak",))
         self.assertEqual(
             tuple(ActiveVehicleParams.__dataclass_fields__),
             ACTIVE_VEHICLE_FIELDS,
@@ -101,7 +101,7 @@ class TestActiveVehicleABI(unittest.TestCase):
         np.testing.assert_array_equal(batched.as_array()[1], values + 1)
 
     def test_from_array_rejects_a_wrong_final_axis(self):
-        for bad in (jnp.zeros(()), jnp.zeros((19,)), jnp.zeros((2, 21))):
+        for bad in (jnp.zeros(()), jnp.zeros((19,)), jnp.zeros((2, ACTIVE_COUNT + 1))):
             with self.assertRaisesRegex(ValueError, "final axis"):
                 ActiveVehicleParams.from_array(bad)
 
